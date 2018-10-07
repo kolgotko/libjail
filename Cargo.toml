@@ -1,0 +1,9 @@
+[package]
+name = "run_container"
+version = "0.1.0"
+authors = ["Bykov Igor <igorb.dev@websm.io>"]
+edition = "2018"
+
+[dependencies]
+libc = "*"
+serde_json = "*"
