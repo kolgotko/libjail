@@ -1,6 +1,6 @@
 extern crate libc;
 
-use libc::{jail_get, jail_set};
+use libc::{jail_get, jail_set, jail_attach};
 use libc::iovec;
 use libc::{__error, strerror};
 
@@ -9,58 +9,77 @@ use std::ffi::{CStr, CString};
 use std::collections::HashMap;
 use std::convert::*;
 
-#[derive(Hash, Eq, PartialEq)]
-enum Iov {
+use std::process::Command;
+
+#[derive(Debug)]
+enum LibJailError {
+    CreateError {code: i32, message: String}
+}
+
+enum SetAction {
+    Create,
+    Update,
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+enum Val {
     CString(CString),
     I32(i32),
     Bool(bool),
+    Null,
 }
 
-impl From<String> for Iov {
+impl From<String> for Val {
     fn from(value: String) -> Self {
-        Iov::CString(CString::new(value).unwrap())
+        Val::CString(CString::new(value).unwrap())
     }
 }
 
-impl From<i32> for Iov {
+impl From<i32> for Val {
     fn from(value: i32) -> Self {
-        Iov::I32(value)
+        Val::I32(value)
     }
 }
 
-impl From<bool> for Iov {
+impl From<bool> for Val {
     fn from(value: bool) -> Self {
-        Iov::Bool(value)
+        Val::Bool(value)
     }
 }
 
-impl<'a> From<&'a str> for Iov {
+impl<'a> From<&'a str> for Val {
     fn from(value: &str) -> Self {
-        Iov::CString(CString::new(value).unwrap())
+        Val::CString(CString::new(value).unwrap())
     }
 }
 
-impl Iov {
+impl Val {
 
     fn to_iov(&self) -> libc::iovec {
 
         match &self {
-            Iov::CString(value) => {
+            Val::CString(value) => {
                 iovec {
                     iov_base: value.as_ptr() as *mut _,
                     iov_len: value.as_bytes_with_nul().len(),
                 }
             },
-            Iov::I32(value) => {
+            Val::I32(value) => {
                 iovec {
                     iov_base: value as *const _ as *mut _,
                     iov_len: size_of_val(value),
                 }
             },
-            Iov::Bool(value) => {
+            Val::Bool(value) => {
                 iovec {
                     iov_base: value as *const _ as *mut _,
                     iov_len: size_of_val(value),
+                }
+            },
+            Val::Null => {
+                iovec {
+                    iov_base: std::ptr::null::<i32>() as *mut _,
+                    iov_len: 0,
                 }
             },
         }
@@ -68,7 +87,7 @@ impl Iov {
     }
 }
 
-fn run(mut rules: HashMap<Iov, Iov>) {
+fn set(mut rules: HashMap <Val, Val>, set_action: SetAction) -> Result<i32, LibJailError> {
 
     let mut iovec_vec = Vec::new();
 
@@ -79,103 +98,78 @@ fn run(mut rules: HashMap<Iov, Iov>) {
 
     }
 
+    let action = match set_action {
+        SetAction::Create => libc::JAIL_CREATE,
+        SetAction::Update => libc::JAIL_UPDATE,
+    };
+
+    println!("action {}", action);
+
     let jid = unsafe {
         jail_set(
             iovec_vec.as_slice().as_ptr() as *mut _,
             iovec_vec.len() as u32,
-            libc::JAIL_CREATE
+            action
         )
     };
 
-    if jid { Ok(jid) }
-    else {
-    
-    }
-    println!("{}", jid);
+    if jid > 0 {
 
-    unsafe {
-        let mut err = *__error();
-        println!("{}", err);
-        let err_str = strerror(err);
-        let err_str = CString::from_raw(err_str);
-        println!("{:?}", err_str);
+        Ok(jid)
+
+    } else {
+
+        unsafe {
+            let mut code = *__error();
+            let message = CString::from_raw(strerror(code))
+                .into_string()
+                .unwrap();
+
+            Err(LibJailError::CreateError{code: code, message: message})
+        }
+
     }
+
+}
+
+fn attach(jid: i32) -> Result<(), LibJailError> {
+
+    let result = unsafe { jail_attach(jid) };
+
+    if result == 0 {
+        Ok(())
+    } else {
+
+        unsafe {
+            let mut code = *__error();
+            let message = CString::from_raw(strerror(code))
+                .into_string()
+                .unwrap();
+
+            Err(LibJailError::CreateError{ code: code, message: message })
+        }
+
+    }
+
 }
 
 fn main() {
 
-    let mut rules: HashMap<Iov, Iov> = HashMap::new();
+    let mut rules: HashMap <Val, Val> = HashMap::new();
 
-    rules.insert("path".into(), "/jails/base11.2".into());
+    rules.insert("path".into(), "/jails/freebsd112".into());
+    rules.insert("name".into(), "freebsd112".into());
     rules.insert("ip4".into(), libc::JAIL_SYS_INHERIT.into());
-    rules.insert("persist".into(), true.into());
+    // rules.insert("persist".into(), false.into());
 
-    run(rules);
+    println!("{:#?}", rules);
 
-    // let mut path_key = CString::new("path").unwrap();
-    // let mut path_value = CString::new("/jails/base11.2").unwrap();
-    // let mut ip4_key = CString::new("ip4").unwrap();
-    // let mut ip4_value = libc::JAIL_SYS_INHERIT;
-    // let mut persist_key = CString::new("persist").unwrap();
-    // let mut persist_value = true;
+    let jid = set(rules, SetAction::Create).unwrap();
+    attach(jid);
 
-    // unsafe {
-
-    //     let iov_path_key = iovec {
-    //         iov_base: path_key.as_ptr() as *mut _,
-    //         iov_len: path_key.as_bytes_with_nul().len(),
-    //     };
-
-    //     let t = iov_path_key.iov_base;
-
-    //     let r = *t;
-    //     println!("{:?}", r);
-
-        // let iov_path_value = iovec {
-        //     iov_base: path_value.as_ptr() as *mut _,
-        //     iov_len: path_value.as_bytes_with_nul().len(),
-        // };
-
-        // let iov_persist_key = iovec {
-        //     iov_base: persist_key.as_ptr() as *mut _,
-        //     iov_len: persist_key.as_bytes_with_nul().len(),
-        // };
-
-        // let iov_persist_value = iovec {
-        //     iov_base: &mut persist_value as *const _ as *mut _,
-        //     iov_len: size_of_val(&persist_value),
-        // };
-
-        // let iov_ip4_key = iovec {
-        //     iov_base: ip4_key.as_ptr() as *mut _,
-        //     iov_len: ip4_key.as_bytes_with_nul().len(),
-        // };
-
-        // let iov_ip4_value = iovec {
-        //     iov_base: &mut ip4_value as *const _ as *mut _,
-        //     iov_len: size_of_val(&ip4_value),
-        // };
-
-        // let iov = [
-        //     iov_path_key, iov_path_value,
-        //     iov_persist_key, iov_persist_value,
-        //     iov_ip4_key, iov_ip4_value,
-        // ];
-
-        // let niov = iov.len() as u32;
-        // let flags = libc::JAIL_CREATE;
-
-        // let jid = jail_set(iov.as_ptr() as *mut _, niov, flags);
-
-        // println!("jid: {}", jid);
-
-        // let mut err = *__error();
-        // println!("{}", err);
-        // let err_str = strerror(err);
-        // let err_str = CString::from_raw(err_str);
-        // println!("{:?}", err_str);
-
-
-    // }
+    Command::new("ls")
+        .arg("/")
+        .spawn()
+        .expect("sh command failed to start");
 
 }
