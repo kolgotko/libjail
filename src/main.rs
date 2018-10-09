@@ -202,7 +202,16 @@ mod libjail {
 
 use self::libjail::*;
 
+use std::thread;
+use std::os::unix::net::{UnixStream, UnixListener};
+
+fn handle_client(stream: UnixStream) {
+    println!("new client");
+}
+
 fn main() {
+
+    let listener = UnixListener::bind("/tmp/container.sock").unwrap();
 
     let mut rules: HashMap <Val, Val> = HashMap::new();
 
@@ -221,5 +230,19 @@ fn main() {
         .arg("/")
         .spawn()
         .expect("sh command failed to start");
+
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                /* connection succeeded */
+                thread::spawn(|| handle_client(stream));
+            }
+            Err(err) => {
+                /* connection failed */
+                break;
+            }
+        }
+    }
 
 }
