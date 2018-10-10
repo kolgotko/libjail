@@ -119,6 +119,45 @@ mod libjail {
         }
     }
 
+    pub fn get(mut rules: HashMap <Val, Val>) {
+
+        let mut iovec_vec = Vec::new();
+
+        for (mut key, mut value) in rules.iter_mut() {
+
+            iovec_vec.push(key.to_iov());
+            iovec_vec.push(value.to_iov());
+
+        }
+
+        let jid = unsafe {
+            jail_get(
+                iovec_vec.as_slice().as_ptr() as *mut _,
+                iovec_vec.len() as u32,
+                0
+            )
+        };
+
+        println!("{:?}", jid);
+        println!("{:?}", rules);
+
+
+        if jid <= 0 {
+
+            unsafe {
+                let mut code = *__error();
+                let message = CString::from_raw(strerror(code))
+                    .into_string()
+                    .unwrap();
+
+                println!("code {:?}, message: {:?}", code, message);
+
+            }
+
+        }
+
+    }
+
     pub fn set(mut rules: HashMap <Val, Val>, action: Action) -> Result<i32, LibJailError> {
 
         let mut iovec_vec = Vec::new();
@@ -202,47 +241,26 @@ mod libjail {
 
 use self::libjail::*;
 
-use std::thread;
-use std::os::unix::net::{UnixStream, UnixListener};
-
-fn handle_client(stream: UnixStream) {
-    println!("new client");
-}
-
 fn main() {
-
-    let listener = UnixListener::bind("/tmp/container.sock").unwrap();
 
     let mut rules: HashMap <Val, Val> = HashMap::new();
 
-    rules.insert("path".into(), "/jails/freebsd112".into());
-    rules.insert("name".into(), "freebsd112".into());
-    rules.insert("ip4".into(), libc::JAIL_SYS_INHERIT.into());
+    // rules.insert("path".into(), "/jails/freebsd112".into());
+    // rules.insert("name".into(), "freebsd112".into());
+    // rules.insert("ip4".into(), libc::JAIL_SYS_INHERIT.into());
     // rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
+
+    // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
+
+    rules.insert("jid".into(), 0.into());
+    // rules.insert("name".into(), "freebsd112".into());
+    rules.insert("name".into(), "freebsd112".into());
+    // rules.insert("host.hostname".into(), "".into());
+
     println!("{:#?}", rules);
 
-    let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
-    // attach(jid);
-
-    Command::new("ls")
-        .arg("/")
-        .spawn()
-        .expect("sh command failed to start");
-
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                /* connection succeeded */
-                thread::spawn(|| handle_client(stream));
-            }
-            Err(err) => {
-                /* connection failed */
-                break;
-            }
-        }
-    }
+    get(rules);
 
 }
