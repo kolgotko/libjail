@@ -55,8 +55,10 @@ mod libjail {
 
     #[derive(Hash, Eq, PartialEq, Clone, Debug)]
     pub enum Val {
+        Buffer(Vec<u8>),
         CString(CString),
         I32(i32),
+        U32(u32),
         Bool(bool),
         Null,
     }
@@ -70,6 +72,18 @@ mod libjail {
     impl From<i32> for Val {
         fn from(value: i32) -> Self {
             Val::I32(value)
+        }
+    }
+
+    impl From<u32> for Val {
+        fn from(value: u32) -> Self {
+            Val::U32(value)
+        }
+    }
+
+    impl From<Vec<u8>> for Val {
+        fn from(value: Vec<u8>) -> Self {
+            Val::Buffer(value)
         }
     }
 
@@ -90,6 +104,12 @@ mod libjail {
         fn to_iov(&self) -> libc::iovec {
 
             match &self {
+                Val::Buffer(value) => {
+                    iovec {
+                        iov_base: value.as_ptr() as *mut _,
+                        iov_len: value.len(),
+                    }
+                },
                 Val::CString(value) => {
                     iovec {
                         iov_base: value.as_ptr() as *mut _,
@@ -97,6 +117,12 @@ mod libjail {
                     }
                 },
                 Val::I32(value) => {
+                    iovec {
+                        iov_base: value as *const _ as *mut _,
+                        iov_len: size_of_val(value),
+                    }
+                },
+                Val::U32(value) => {
                     iovec {
                         iov_base: value as *const _ as *mut _,
                         iov_len: size_of_val(value),
@@ -119,7 +145,7 @@ mod libjail {
         }
     }
 
-    pub fn get(mut rules: HashMap <Val, Val>) {
+    pub fn get(mut rules: HashMap <Val, Val>) -> Result<HashMap<Val, Val>, LibJailError> {
 
         let mut iovec_vec = Vec::new();
 
@@ -138,10 +164,6 @@ mod libjail {
             )
         };
 
-        println!("{:?}", jid);
-        println!("{:?}", rules);
-
-
         if jid <= 0 {
 
             unsafe {
@@ -155,6 +177,8 @@ mod libjail {
             }
 
         }
+
+        Ok(rules)
 
     }
 
@@ -254,13 +278,14 @@ fn main() {
 
     // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
-    rules.insert("jid".into(), 0.into());
+    rules.insert("jid".into(), 1.into());
     // rules.insert("name".into(), "freebsd112".into());
-    rules.insert("name".into(), "freebsd112".into());
+    rules.insert("name".into(), vec![0; 256].into());
     // rules.insert("host.hostname".into(), "".into());
 
     println!("{:#?}", rules);
 
-    get(rules);
+    let rules = get(rules);
+    println!("{:?}", rules);
 
 }
