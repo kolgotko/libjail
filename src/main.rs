@@ -1,4 +1,5 @@
 extern crate libc;
+extern crate sysctl;
 
 use std::collections::HashMap;
 use std::process::Command;
@@ -9,6 +10,7 @@ mod libjail {
     use libc::{jail_get, jail_set, jail_attach, jail_remove};
     use libc::{__error, strerror};
 
+    use std::net::{ Ipv4Addr, Ipv6Addr };
     use std::mem::size_of_val;
     use std::ffi::{CStr, CString};
     use std::collections::HashMap;
@@ -59,6 +61,7 @@ mod libjail {
         CString(CString),
         I32(i32),
         U32(u32),
+        U128(u128),
         Bool(bool),
         Null,
     }
@@ -93,6 +96,20 @@ mod libjail {
         }
     }
 
+    impl From<Ipv4Addr> for Val {
+        fn from(value: Ipv4Addr) -> Self {
+            let numeric: u32 = value.into();
+            Val::U32(numeric.swap_bytes())
+        }
+    }
+
+    impl From<Ipv6Addr> for Val {
+        fn from(value: Ipv6Addr) -> Self {
+            let numeric: u128 = value.into();
+            Val::U128(numeric.swap_bytes())
+        }
+    }
+
     impl<'a> From<&'a str> for Val {
         fn from(value: &str) -> Self {
             Val::CString(CString::new(value).unwrap())
@@ -123,6 +140,12 @@ mod libjail {
                     }
                 },
                 Val::U32(value) => {
+                    iovec {
+                        iov_base: value as *const _ as *mut _,
+                        iov_len: size_of_val(value),
+                    }
+                },
+                Val::U128(value) => {
                     iovec {
                         iov_base: value as *const _ as *mut _,
                         iov_len: size_of_val(value),
@@ -261,31 +284,83 @@ mod libjail {
         }
 
     }
+
+    use sysctl::{ Ctl, CtlType, CtlValue};
+    use std::mem::size_of;
+
+    pub fn get_rules<R>(jid: i32, rules: R)
+        where R: IntoIterator, R::Item: Into<String>,
+    {
+
+        for rule in rules {
+
+            let key: String = rule.into();
+            let rule = format!("security.jail.param.{}", key);
+            let ctl = Ctl::new(&rule).unwrap();
+            let ctl_name = ctl.name().unwrap();
+            let ctl_value = ctl.value().unwrap();
+            let ctl_type = ctl.value_type().unwrap();
+
+            match ctl_type {
+                CtlType::Int => { Val::I32(0); },
+                CtlType::Ulong => { Val::U32(0); },
+                CtlType::String => {
+
+                    if let CtlValue::String(v) = ctl_value {
+
+                        let size: usize = v.parse().unwrap();
+                        let buffer: Vec<u8> = vec![0; size];
+                        // Val::from(buffer)
+
+                    } else { Val::I32(0); }
+
+                },
+                CtlType::Struct => {
+
+                    if let CtlValue::Struct(v) = ctl_value {
+
+                        let size: usize = v[0].into();
+                        
+
+                    } else { 0; }
+
+                },
+                _ => { 0; },
+            }
+        
+        }
+
+    }
+
 }
 
 use self::libjail::*;
+use std::net::{ Ipv4Addr, Ipv6Addr };
 
 fn main() {
 
-    let mut rules: HashMap <Val, Val> = HashMap::new();
+    let mut rules: HashMap<Val, Val> = HashMap::new();
 
-    // rules.insert("path".into(), "/jails/freebsd112".into());
-    // rules.insert("name".into(), "freebsd112".into());
-    // rules.insert("ip4".into(), libc::JAIL_SYS_INHERIT.into());
-    // rules.insert("persist".into(), true.into());
+    rules.insert("path".into(), "/jails/freebsd112".into());
+    rules.insert("name".into(), "freebsd112".into());
+    rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
+    rules.insert("ip6.addr".into(), "::123".parse::<Ipv6Addr>().unwrap().into());
+    rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
 
-    // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
+    let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
-    rules.insert("jid".into(), 1.into());
-    // rules.insert("name".into(), "freebsd112".into());
-    rules.insert("name".into(), vec![0; 256].into());
-    // rules.insert("host.hostname".into(), "".into());
+    // get_rules(4, vec!["name", "ip4.addr", "jid"]);
 
-    println!("{:#?}", rules);
+    // rules.insert("jid".into(), 1.into());
+    // // rules.insert("name".into(), "freebsd112".into());
+    // rules.insert("name".into(), vec![0; 256].into());
+    // // rules.insert("host.hostname".into(), "".into());
 
-    let rules = get(rules);
-    println!("{:?}", rules);
+    // println!("{:#?}", rules);
+
+    // let rules = get(rules);
+    // println!("{:?}", rules);
 
 }
