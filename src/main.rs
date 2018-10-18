@@ -7,19 +7,45 @@ use std::process::Command;
 mod libjail {
 
     use libc::iovec;
-    use libc::{jail_get, jail_set, jail_attach, jail_remove};
-    use libc::{__error, strerror};
+    use libc::{ jail_get, jail_set, jail_attach, jail_remove };
+    use libc::{ __error, strerror };
 
     use std::net::{ Ipv4Addr, Ipv6Addr };
     use std::mem::size_of_val;
-    use std::ffi::{CStr, CString};
+    use std::ffi::{ CStr, CString };
     use std::collections::HashMap;
     use std::convert::*;
     use std::ops;
+    use std::error::Error;
+    use std::fmt;
 
     #[derive(Debug)]
     pub enum LibJailError {
-        CreateError {code: i32, message: String}
+        CreateError{ code: i32, message: String },
+        RuleError(sysctl::SysctlError),
+        KindError(Box<Error>),
+        MismatchCtlType,
+        MismatchCtlValue,
+    }
+
+    impl fmt::Display for LibJailError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+    impl Error for LibJailError { }
+
+    impl From<sysctl::SysctlError> for LibJailError {
+        fn from(error: sysctl::SysctlError) -> Self {
+            LibJailError::RuleError(error)
+        }
+    }
+
+    impl From<std::num::ParseIntError> for LibJailError {
+        fn from(error: std::num::ParseIntError) -> Self {
+            LibJailError::KindError(error.into())
+        }
     }
 
     #[derive(Debug)]
@@ -288,31 +314,35 @@ mod libjail {
     use sysctl::{ Ctl, CtlType, CtlValue};
     use std::mem::size_of;
 
-    pub fn get_rules<R>(jid: i32, rules: R)
-        where R: IntoIterator, R::Item: Into<String>,
+    pub fn get_rules<R>(jid: i32, rules: R) -> Result<HashMap<Val, Val>, LibJailError>
+        where R: IntoIterator, R::Item: Into<String>
     {
+
+        let mut iovec_vec = Vec::new();
+        let mut hash_map: HashMap<Val, Val> = HashMap::new();
 
         for rule in rules {
 
             let key: String = rule.into();
             let rule = format!("security.jail.param.{}", key);
-            let ctl = Ctl::new(&rule).unwrap();
-            let ctl_name = ctl.name().unwrap();
-            let ctl_value = ctl.value().unwrap();
-            let ctl_type = ctl.value_type().unwrap();
+            let ctl = Ctl::new(&rule)?;
+            let ctl_name = ctl.name()?;
+            let ctl_value = ctl.value()?;
+            let ctl_type = ctl.value_type()?;
 
-            match ctl_type {
-                CtlType::Int => { Val::I32(0); },
-                CtlType::Ulong => { Val::U32(0); },
+            let key: Val = key.into();
+            let value: Result<Val, LibJailError> = match ctl_type {
+                CtlType::Int => { Ok(Val::I32(0)) },
+                CtlType::Ulong => { Ok(Val::U32(0)) },
                 CtlType::String => {
 
                     if let CtlValue::String(v) = ctl_value {
 
-                        let size: usize = v.parse().unwrap();
+                        let size: usize = v.parse()?;
                         let buffer: Vec<u8> = vec![0; size];
-                        // Val::from(buffer)
+                        Ok(Val::from(buffer))
 
-                    } else { Val::I32(0); }
+                    } else { Err(LibJailError::MismatchCtlValue) }
 
                 },
                 CtlType::Struct => {
@@ -320,15 +350,43 @@ mod libjail {
                     if let CtlValue::Struct(v) = ctl_value {
 
                         let size: usize = v[0].into();
-                        
 
-                    } else { 0; }
+                        match size {
+
+                            4 => { Ok(Val::U32(0)) },
+                            16 => { Ok(Val::U128(0)) },
+                            _ => { Err(LibJailError::MismatchCtlValue) },
+
+                        }
+
+                    } else { Err(LibJailError::MismatchCtlValue) }
 
                 },
-                _ => { 0; },
-            }
-        
+                _ => { Err(LibJailError::MismatchCtlType) },
+            };
+
+            hash_map.insert(key, value?);
+
         }
+
+        hash_map.insert("jid".into(), jid.into());
+
+        for (key, value) in hash_map.iter() {
+
+            iovec_vec.push(key.to_iov());
+            iovec_vec.push(value.to_iov());
+
+        }
+
+        let result = unsafe {
+            jail_get(
+                iovec_vec.as_slice().as_ptr() as *mut _,
+                iovec_vec.len() as u32,
+                0
+                )
+        };
+
+        Ok(hash_map)
 
     }
 
@@ -339,19 +397,20 @@ use std::net::{ Ipv4Addr, Ipv6Addr };
 
 fn main() {
 
-    let mut rules: HashMap<Val, Val> = HashMap::new();
+    // let mut rules: HashMap<Val, Val> = HashMap::new();
 
-    rules.insert("path".into(), "/jails/freebsd112".into());
-    rules.insert("name".into(), "freebsd112".into());
-    rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
-    rules.insert("ip6.addr".into(), "::123".parse::<Ipv6Addr>().unwrap().into());
-    rules.insert("persist".into(), true.into());
+    // rules.insert("path".into(), "/jails/freebsd112".into());
+    // rules.insert("name".into(), "freebsd112".into());
+    // rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
+    // rules.insert("ip6.addr".into(), "::123".parse::<Ipv6Addr>().unwrap().into());
+    // rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
 
-    let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
+    // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
-    // get_rules(4, vec!["name", "ip4.addr", "jid"]);
+    let rules = get_rules(2, vec!["name", "ip4.addr", "jid", "ip6.addr"]).unwrap();
+    println!("{:?}", rules);
 
     // rules.insert("jid".into(), 1.into());
     // // rules.insert("name".into(), "freebsd112".into());
@@ -360,7 +419,5 @@ fn main() {
 
     // println!("{:#?}", rules);
 
-    // let rules = get(rules);
-    // println!("{:?}", rules);
 
 }
