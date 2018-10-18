@@ -386,7 +386,22 @@ mod libjail {
                 )
         };
 
-        Ok(hash_map)
+        if result >= 0 {
+
+            Ok(hash_map)
+
+        } else {
+
+            unsafe {
+                let mut code = *__error();
+                let message = CString::from_raw(strerror(code))
+                    .into_string()
+                    .unwrap();
+
+                Err(LibJailError::CreateError{ code: code, message: message })
+            }
+
+        }
 
     }
 
@@ -409,7 +424,7 @@ fn main() {
 
     // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
-    let rules = get_rules(2, vec!["name", "ip4.addr", "jid", "ip6.addr"]).unwrap();
+    let rules = get_rules(2, vec!["name", "ip4.addr", "jid", "ip6.addr"]);
     println!("{:?}", rules);
 
     // rules.insert("jid".into(), 1.into());
