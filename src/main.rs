@@ -7,22 +7,23 @@ use std::process::Command;
 mod libjail {
 
     use libc::iovec;
-    use libc::{ jail_get, jail_set, jail_attach, jail_remove };
-    use libc::{ __error, strerror };
+    use libc::{__error, strerror};
+    use libc::{jail_attach, jail_get, jail_remove, jail_set};
+    use sysctl::{Ctl, CtlType, CtlValue};
 
-    use std::net::{ Ipv4Addr, Ipv6Addr };
-    use std::mem::size_of_val;
-    use std::ffi::{ CStr, CString };
     use std::collections::HashMap;
     use std::convert::*;
-    use std::ops;
     use std::error::Error;
+    use std::ffi::{CStr, CString};
+    use std::mem::{size_of, size_of_val};
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::ops;
     use std::fmt;
 
     #[derive(Debug)]
     pub enum LibJailError {
-        CreateError{ code: i32, message: String },
-        RuleError(sysctl::SysctlError),
+        ExternalError { code: i32, message: String },
+        SysctlError(sysctl::SysctlError),
         KindError(Box<Error>),
         MismatchCtlType,
         MismatchCtlValue,
@@ -34,11 +35,11 @@ mod libjail {
         }
     }
 
-    impl Error for LibJailError { }
+    impl Error for LibJailError {}
 
     impl From<sysctl::SysctlError> for LibJailError {
         fn from(error: sysctl::SysctlError) -> Self {
-            LibJailError::RuleError(error)
+            LibJailError::SysctlError(error)
         }
     }
 
@@ -52,8 +53,12 @@ mod libjail {
     pub struct Action(i32);
 
     impl Action {
-        pub fn create() -> Self { Action(libc::JAIL_CREATE) }
-        pub fn update() -> Self { Action(libc::JAIL_UPDATE) }
+        pub fn create() -> Self {
+            Action(libc::JAIL_CREATE)
+        }
+        pub fn update() -> Self {
+            Action(libc::JAIL_UPDATE)
+        }
     }
 
     impl ops::Add<Action> for Action {
@@ -62,7 +67,6 @@ mod libjail {
         fn add(self, other: Action) -> Action {
             Action(self.0 | other.0)
         }
-
     }
 
     impl ops::Add<Modifier> for Action {
@@ -71,14 +75,15 @@ mod libjail {
         fn add(self, other: Modifier) -> Action {
             Action(self.0 | other.0)
         }
-
     }
 
     #[derive(Debug)]
     pub struct Modifier(i32);
 
     impl Modifier {
-        pub fn attach() -> Self { Modifier(libc::JAIL_ATTACH) }
+        pub fn attach() -> Self {
+            Modifier(libc::JAIL_ATTACH)
+        }
     }
 
     #[derive(Hash, Eq, PartialEq, Clone, Debug)]
@@ -143,186 +148,116 @@ mod libjail {
     }
 
     impl Val {
-
         fn to_iov(&self) -> libc::iovec {
-
             match &self {
-                Val::Buffer(value) => {
-                    iovec {
-                        iov_base: value.as_ptr() as *mut _,
-                        iov_len: value.len(),
-                    }
+                Val::Buffer(value) => iovec {
+                    iov_base: value.as_ptr() as *mut _,
+                    iov_len: value.len(),
                 },
-                Val::CString(value) => {
-                    iovec {
-                        iov_base: value.as_ptr() as *mut _,
-                        iov_len: value.as_bytes_with_nul().len(),
-                    }
+                Val::CString(value) => iovec {
+                    iov_base: value.as_ptr() as *mut _,
+                    iov_len: value.as_bytes_with_nul().len(),
                 },
-                Val::I32(value) => {
-                    iovec {
-                        iov_base: value as *const _ as *mut _,
-                        iov_len: size_of_val(value),
-                    }
+                Val::I32(value) => iovec {
+                    iov_base: value as *const _ as *mut _,
+                    iov_len: size_of_val(value),
                 },
-                Val::U32(value) => {
-                    iovec {
-                        iov_base: value as *const _ as *mut _,
-                        iov_len: size_of_val(value),
-                    }
+                Val::U32(value) => iovec {
+                    iov_base: value as *const _ as *mut _,
+                    iov_len: size_of_val(value),
                 },
-                Val::U128(value) => {
-                    iovec {
-                        iov_base: value as *const _ as *mut _,
-                        iov_len: size_of_val(value),
-                    }
+                Val::U128(value) => iovec {
+                    iov_base: value as *const _ as *mut _,
+                    iov_len: size_of_val(value),
                 },
-                Val::Bool(value) => {
-                    iovec {
-                        iov_base: value as *const _ as *mut _,
-                        iov_len: size_of_val(value),
-                    }
+                Val::Bool(value) => iovec {
+                    iov_base: value as *const _ as *mut _,
+                    iov_len: size_of_val(value),
                 },
-                Val::Null => {
-                    iovec {
-                        iov_base: std::ptr::null::<i32>() as *mut _,
-                        iov_len: 0,
-                    }
+                Val::Null => iovec {
+                    iov_base: std::ptr::null::<i32>() as *mut _,
+                    iov_len: 0,
                 },
             }
-
         }
     }
 
-    pub fn get(mut rules: HashMap <Val, Val>) -> Result<HashMap<Val, Val>, LibJailError> {
-
-        let mut iovec_vec = Vec::new();
-
-        for (mut key, mut value) in rules.iter_mut() {
-
-            iovec_vec.push(key.to_iov());
-            iovec_vec.push(value.to_iov());
-
-        }
-
-        let jid = unsafe {
-            jail_get(
-                iovec_vec.as_slice().as_ptr() as *mut _,
-                iovec_vec.len() as u32,
-                0
-            )
-        };
-
-        if jid <= 0 {
-
-            unsafe {
-                let mut code = *__error();
-                let message = CString::from_raw(strerror(code))
-                    .into_string()
-                    .unwrap();
-
-                println!("code {:?}, message: {:?}", code, message);
-
-            }
-
-        }
-
-        Ok(rules)
-
-    }
-
-    pub fn set(mut rules: HashMap <Val, Val>, action: Action) -> Result<i32, LibJailError> {
-
+    pub fn set(mut rules: HashMap<Val, Val>, action: Action) -> Result<i32, LibJailError> {
         let mut iovec_vec = Vec::new();
 
         for (key, value) in rules.iter() {
-
             iovec_vec.push(key.to_iov());
             iovec_vec.push(value.to_iov());
-
         }
 
         let jid = unsafe {
             jail_set(
                 iovec_vec.as_slice().as_ptr() as *mut _,
                 iovec_vec.len() as u32,
-                action.0
-                )
+                action.0,
+            )
         };
 
         if jid > 0 {
-
             Ok(jid)
-
         } else {
-
             unsafe {
                 let mut code = *__error();
-                let message = CString::from_raw(strerror(code))
-                    .into_string()
-                    .unwrap();
+                let message = CString::from_raw(strerror(code)).into_string().unwrap();
 
-                Err(LibJailError::CreateError{ code: code, message: message })
+                Err(LibJailError::ExternalError {
+                    code: code,
+                    message: message,
+                })
             }
-
         }
-
     }
 
     pub fn attach(jid: i32) -> Result<(), LibJailError> {
-
         let result = unsafe { jail_attach(jid) };
 
         if result == 0 {
             Ok(())
         } else {
-
             unsafe {
                 let mut code = *__error();
-                let message = CString::from_raw(strerror(code))
-                    .into_string()
-                    .unwrap();
+                let message = CString::from_raw(strerror(code)).into_string().unwrap();
 
-                Err(LibJailError::CreateError{ code: code, message: message })
+                Err(LibJailError::ExternalError {
+                    code: code,
+                    message: message,
+                })
             }
-
         }
-
     }
 
     pub fn remove(jid: i32) -> Result<(), LibJailError> {
-
         let result = unsafe { jail_remove(jid) };
 
         if result == 0 {
             Ok(())
         } else {
-
             unsafe {
                 let mut code = *__error();
-                let message = CString::from_raw(strerror(code))
-                    .into_string()
-                    .unwrap();
+                let message = CString::from_raw(strerror(code)).into_string().unwrap();
 
-                Err(LibJailError::CreateError{ code: code, message: message })
+                Err(LibJailError::ExternalError {
+                    code: code,
+                    message: message,
+                })
             }
-
         }
-
     }
 
-    use sysctl::{ Ctl, CtlType, CtlValue};
-    use std::mem::size_of;
-
     pub fn get_rules<R>(jid: i32, rules: R) -> Result<HashMap<Val, Val>, LibJailError>
-        where R: IntoIterator, R::Item: Into<String>
+    where
+        R: IntoIterator,
+        R::Item: Into<String>,
     {
-
         let mut iovec_vec = Vec::new();
         let mut hash_map: HashMap<Val, Val> = HashMap::new();
 
         for rule in rules {
-
             let key: String = rule.into();
             let rule = format!("security.jail.param.{}", key);
             let ctl = Ctl::new(&rule)?;
@@ -332,86 +267,72 @@ mod libjail {
 
             let key: Val = key.into();
             let value: Result<Val, LibJailError> = match ctl_type {
-                CtlType::Int => { Ok(Val::I32(0)) },
-                CtlType::Ulong => { Ok(Val::U32(0)) },
+                CtlType::Int => Ok(Val::I32(0)),
+                CtlType::Ulong => Ok(Val::U32(0)),
                 CtlType::String => {
-
                     if let CtlValue::String(v) = ctl_value {
-
                         let size: usize = v.parse()?;
                         let buffer: Vec<u8> = vec![0; size];
                         Ok(Val::from(buffer))
-
-                    } else { Err(LibJailError::MismatchCtlValue) }
-
-                },
+                    } else {
+                        Err(LibJailError::MismatchCtlValue)
+                    }
+                }
                 CtlType::Struct => {
-
                     if let CtlValue::Struct(v) = ctl_value {
-
                         let size: usize = v[0].into();
 
                         match size {
-
-                            4 => { Ok(Val::U32(0)) },
-                            16 => { Ok(Val::U128(0)) },
-                            _ => { Err(LibJailError::MismatchCtlValue) },
-
+                            4 => Ok(Val::U32(0)),
+                            16 => Ok(Val::U128(0)),
+                            _ => Err(LibJailError::MismatchCtlValue),
                         }
-
-                    } else { Err(LibJailError::MismatchCtlValue) }
-
-                },
-                _ => { Err(LibJailError::MismatchCtlType) },
+                    } else {
+                        Err(LibJailError::MismatchCtlValue)
+                    }
+                }
+                _ => Err(LibJailError::MismatchCtlType),
             };
 
             hash_map.insert(key, value?);
-
         }
 
         hash_map.insert("jid".into(), jid.into());
 
         for (key, value) in hash_map.iter() {
-
             iovec_vec.push(key.to_iov());
             iovec_vec.push(value.to_iov());
-
         }
 
         let result = unsafe {
             jail_get(
                 iovec_vec.as_slice().as_ptr() as *mut _,
                 iovec_vec.len() as u32,
-                0
-                )
+                0,
+            )
         };
 
         if result >= 0 {
-
             Ok(hash_map)
-
         } else {
-
             unsafe {
                 let mut code = *__error();
-                let message = CString::from_raw(strerror(code))
-                    .into_string()
-                    .unwrap();
+                let message = CString::from_raw(strerror(code)).into_string().unwrap();
 
-                Err(LibJailError::CreateError{ code: code, message: message })
+                Err(LibJailError::ExternalError {
+                    code: code,
+                    message: message,
+                })
             }
-
         }
-
     }
 
 }
 
 use self::libjail::*;
-use std::net::{ Ipv4Addr, Ipv6Addr };
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn main() {
-
     // let mut rules: HashMap<Val, Val> = HashMap::new();
 
     // rules.insert("path".into(), "/jails/freebsd112".into());
@@ -421,10 +342,9 @@ fn main() {
     // rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
-
     // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
-    let rules = get_rules(2, vec!["name", "ip4.addr", "jid", "ip6.addr"]);
+    let rules = get_rules(1, vec!["name", "ip4.addr", "jid", "ip6.addr"]).unwrap();
     println!("{:?}", rules);
 
     // rules.insert("jid".into(), 1.into());
@@ -433,6 +353,4 @@ fn main() {
     // // rules.insert("host.hostname".into(), "".into());
 
     // println!("{:#?}", rules);
-
-
 }
