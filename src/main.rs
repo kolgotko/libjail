@@ -86,6 +86,30 @@ mod libjail {
         }
     }
 
+    #[derive(Debug)]
+    enum Index {
+        Jid(i32),
+        Name(String),
+    }
+
+    impl From<i32> for Index {
+        fn from(value: i32) -> Self {
+            Index::Jid(value)
+        }
+    }
+
+    impl From<String> for Index {
+        fn from(value: String) -> Self {
+            Index::Name(value)
+        }
+    }
+
+    impl From<&str> for Index {
+        fn from(value: &str) -> Self {
+            Index::Name(value.to_string())
+        }
+    }
+
     #[derive(Hash, Eq, PartialEq, Clone, Debug)]
     pub enum Val {
         Buffer(Vec<u8>),
@@ -100,6 +124,12 @@ mod libjail {
     impl From<String> for Val {
         fn from(value: String) -> Self {
             Val::CString(CString::new(value).unwrap())
+        }
+    }
+
+    impl From<CString> for Val {
+        fn from(value: CString) -> Self {
+            Val::CString(value)
         }
     }
 
@@ -141,13 +171,36 @@ mod libjail {
         }
     }
 
-    impl<'a> From<&'a str> for Val {
+    impl From<&str> for Val {
         fn from(value: &str) -> Self {
             Val::CString(CString::new(value).unwrap())
         }
     }
 
     impl Val {
+        fn to_string(self) -> Result<String, Box<Error>> {
+
+            match self {
+                Val::Buffer(buffer) => {
+
+                    let string = unsafe {
+                        CString::from_raw(buffer.as_ptr() as *mut _) 
+                    };
+
+                    Ok(string.into_string()?)
+                },
+                Val::CString(value) => unsafe {
+                    Ok(value.into_string()?)
+                },
+                Val::I32(value) => Ok(value.to_string()),
+                Val::U32(value) => Ok(value.to_string()),
+                Val::U128(value) => Ok(value.to_string()),
+                Val::Bool(value) => Ok(value.to_string()),
+                Val::Null => Ok("".to_string()),
+            }
+
+        }
+
         fn to_iov(&self) -> libc::iovec {
             match &self {
                 Val::Buffer(value) => iovec {
@@ -249,7 +302,7 @@ mod libjail {
         }
     }
 
-    pub fn get_rules<R>(jid: i32, rules: R) -> Result<HashMap<Val, Val>, LibJailError>
+    pub fn get_rules<R>(index: impl Into<Index>, rules: R) -> Result<HashMap<Val, Val>, LibJailError>
     where
         R: IntoIterator,
         R::Item: Into<String>,
@@ -297,7 +350,14 @@ mod libjail {
             hash_map.insert(key, value?);
         }
 
-        hash_map.insert("jid".into(), jid.into());
+        match index.into() {
+            Index::Jid(jid) => {
+                hash_map.insert("jid".into(), jid.into());
+            },
+            Index::Name(name) => {
+                hash_map.insert("name".into(), name.into());
+            },
+        }
 
         for (key, value) in hash_map.iter() {
             iovec_vec.push(key.to_iov());
@@ -313,7 +373,14 @@ mod libjail {
         };
 
         if result >= 0 {
+
+            for (key, value) in hash_map.iter_mut() {
+
+                *value = value.clone().to_string().unwrap().into();
+
+            }
             Ok(hash_map)
+
         } else {
             unsafe {
                 let mut code = *__error();
@@ -333,19 +400,19 @@ use self::libjail::*;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn main() {
-    // let mut rules: HashMap<Val, Val> = HashMap::new();
+    let mut rules: HashMap<Val, Val> = HashMap::new();
 
-    // rules.insert("path".into(), "/jails/freebsd112".into());
-    // rules.insert("name".into(), "freebsd112".into());
-    // rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
-    // rules.insert("ip6.addr".into(), "::123".parse::<Ipv6Addr>().unwrap().into());
-    // rules.insert("persist".into(), true.into());
+    rules.insert("path".into(), "/jails/freebsd112".into());
+    rules.insert("name".into(), "freebsd112".into());
+    rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
+    rules.insert("ip6.addr".into(), "::123".parse::<Ipv6Addr>().unwrap().into());
+    rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
-    // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
+    let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
     let rules = get_rules(1, vec!["name", "ip4.addr", "jid", "ip6.addr"]).unwrap();
-    println!("{:?}", rules);
+    println!("{:#?}", rules);
 
     // rules.insert("jid".into(), 1.into());
     // // rules.insert("name".into(), "freebsd112".into());
