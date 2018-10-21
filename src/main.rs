@@ -24,7 +24,7 @@ mod libjail {
     pub enum LibJailError {
         ExternalError { code: i32, message: String },
         SysctlError(sysctl::SysctlError),
-        KindError(Box<Error>),
+        ConversionError(Box<Error>),
         MismatchCtlType,
         MismatchCtlValue,
     }
@@ -40,12 +40,6 @@ mod libjail {
     impl From<sysctl::SysctlError> for LibJailError {
         fn from(error: sysctl::SysctlError) -> Self {
             LibJailError::SysctlError(error)
-        }
-    }
-
-    impl From<std::num::ParseIntError> for LibJailError {
-        fn from(error: std::num::ParseIntError) -> Self {
-            LibJailError::KindError(error.into())
         }
     }
 
@@ -223,7 +217,7 @@ mod libjail {
     }
 
     impl Val {
-        fn to_string(self) -> Result<String, Box<Error>> {
+        fn to_string(self) -> Result<String, LibJailError> {
 
             match self {
                 Val::Buffer(buffer) => {
@@ -232,10 +226,12 @@ mod libjail {
                         CString::from_raw(buffer.as_ptr() as *mut _) 
                     };
 
-                    Ok(string.into_string()?)
+                    string.into_string()
+                        .map_err(|error| LibJailError::ConversionError(error.into()))
                 },
                 Val::CString(value) => unsafe {
-                    Ok(value.into_string()?)
+                    value.into_string()
+                        .map_err(|error| LibJailError::ConversionError(error.into()))
                 },
                 Val::I32(value) => Ok(value.to_string()),
                 Val::U32(value) => Ok(value.to_string()),
@@ -391,7 +387,11 @@ mod libjail {
             CtlType::Ulong => Ok(Val::U32(0)),
             CtlType::String => {
                 if let CtlValue::String(v) = ctl_value {
-                    let size: usize = v.parse()?;
+                    let size_result = v.parse::<usize>();
+                    let size_result = size_result
+                        .map_err(|error| LibJailError::ConversionError(error.into()));
+
+                    let size: usize = size_result?;
                     let buffer: Vec<u8> = vec![0; size];
                     Ok(Val::from(buffer))
                 } else {
@@ -400,6 +400,7 @@ mod libjail {
             }
             CtlType::Struct => {
                 if let CtlValue::Struct(v) = ctl_value {
+
                     let size: usize = v[0].into();
 
                     match size {
@@ -407,6 +408,7 @@ mod libjail {
                         16 => Ok(Val::U128(0)),
                         _ => Err(LibJailError::MismatchCtlValue),
                     }
+
                 } else {
                     Err(LibJailError::MismatchCtlValue)
                 }
@@ -415,7 +417,7 @@ mod libjail {
         }
     }
 
-    pub fn get_rules<R>(index: impl Into<Index>, rules: R) -> Result<HashMap<String, OutVal>, LibJailError>
+    pub fn get_rules<R>(index: impl Into<Index>, keys: R) -> Result<HashMap<String, OutVal>, LibJailError>
     where
         R: IntoIterator,
         R::Item: Into<String>,
@@ -423,11 +425,9 @@ mod libjail {
         let mut iovec_vec = Vec::new();
         let mut hash_map: HashMap<Val, Val> = HashMap::new();
 
-        for rule in rules {
+        for key in keys {
 
-            let key: String = rule.into();
-            let rule = format!("security.jail.param.{}", key);
-
+            let key: String = key.into();
             let value = get_val_by_key(&key);
 
             if value.is_some() {
@@ -472,9 +472,13 @@ mod libjail {
 
             for (key, value) in hash_map.iter_mut() {
 
-                out_hash_map.insert(key.clone().to_string().unwrap(), OutVal::from(value.clone()));
+                out_hash_map.insert(
+                    key.clone().to_string()?,
+                    OutVal::from(value.clone())
+                    );
 
             }
+
             Ok(out_hash_map)
 
         } else {
@@ -508,7 +512,7 @@ fn main() {
     // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
 
     let rules = get_rules(1, vec!["name", "ip4.addr", "jid", "ip6.addr"]).unwrap();
-    println!("-- {:#?}", rules);
+    println!("-- {:?}", rules);
 
     // rules.insert("jid".into(), 1.into());
     // // rules.insert("name".into(), "freebsd112".into());
