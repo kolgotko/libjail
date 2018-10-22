@@ -81,7 +81,7 @@ mod libjail {
     }
 
     #[derive(Debug)]
-    enum Index {
+    pub enum Index {
         Jid(i32),
         Name(String),
     }
