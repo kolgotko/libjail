@@ -1,5 +1,5 @@
 [package]
-name = "run_container"
+name = "libjail"
 version = "0.1.0"
 authors = ["Bykov Igor <igorb.dev@websm.io>"]
 edition = "2018"
