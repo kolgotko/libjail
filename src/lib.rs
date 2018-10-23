@@ -10,7 +10,7 @@ use sysctl::{Ctl, CtlType, CtlValue};
 use std::collections::HashMap;
 use std::convert::*;
 use std::error::Error;
-use std::ffi::{CString};
+use std::ffi::{CString, CStr};
 use std::mem::{size_of_val};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops;
@@ -105,10 +105,20 @@ pub enum OutVal {
     String(String),
     I32(i32),
     U32(u32),
+    U64(u64),
     Bool(bool),
     Ip4(Ipv4Addr),
     Ip6(Ipv6Addr),
     Null,
+}
+
+impl OutVal {
+    pub fn into_string(self) -> String {
+        match self {
+            OutVal::String(value) => value,
+            _ => "".to_string(),
+        }
+    }
 }
 
 impl From<Val> for OutVal {
@@ -116,6 +126,7 @@ impl From<Val> for OutVal {
         match val {
             Val::I32(value) => OutVal::I32(value),
             Val::U32(value) => OutVal::U32(value),
+            Val::U64(value) => OutVal::U64(value),
             Val::Bool(value) => OutVal::Bool(value),
             Val::CString(value) => {
                 let value = value.into_string().unwrap_or("".to_string());
@@ -131,10 +142,10 @@ impl From<Val> for OutVal {
             },
             Val::Buffer(buffer) => {
 
-                let string = unsafe {
-                    CString::from_raw(buffer.as_ptr() as *mut _) 
+                let c_str = unsafe {
+                    CStr::from_ptr(buffer.as_ptr() as *const _)
                 };
-
+                let string = c_str.to_owned();
                 let string = string.into_string().unwrap_or("".to_string());
                 OutVal::String(string)
             },
@@ -149,6 +160,7 @@ pub enum Val {
     CString(CString),
     I32(i32),
     U32(u32),
+    U64(u64),
     U128(u128),
     Bool(bool),
     Ip4(u32),
@@ -177,6 +189,12 @@ impl From<i32> for Val {
 impl From<u32> for Val {
     fn from(value: u32) -> Self {
         Val::U32(value)
+    }
+}
+
+impl From<u64> for Val {
+    fn from(value: u64) -> Self {
+        Val::U64(value)
     }
 }
 
@@ -213,7 +231,7 @@ impl From<&str> for Val {
 }
 
 impl Val {
-    fn to_string(self) -> Result<String, LibJailError> {
+    fn into_string(self) -> Result<String, LibJailError> {
 
         match self {
             Val::Buffer(buffer) => {
@@ -231,6 +249,7 @@ impl Val {
             },
             Val::I32(value) => Ok(value.to_string()),
             Val::U32(value) => Ok(value.to_string()),
+            Val::U64(value) => Ok(value.to_string()),
             Val::U128(value) => Ok(value.to_string()),
             Val::Bool(value) => Ok(value.to_string()),
             Val::Ip4(value) => {
@@ -261,6 +280,10 @@ impl Val {
                 iov_len: size_of_val(value),
             },
             Val::U32(value) => iovec {
+                iov_base: value as *const _ as *mut _,
+                iov_len: size_of_val(value),
+            },
+            Val::U64(value) => iovec {
                 iov_base: value as *const _ as *mut _,
                 iov_len: size_of_val(value),
             },
@@ -386,7 +409,7 @@ fn get_val_by_type(key: &str) -> Result<Val, LibJailError> {
 
     match ctl_type {
         CtlType::Int => Ok(Val::I32(0)),
-        CtlType::Ulong => Ok(Val::U32(0)),
+        CtlType::Ulong => Ok(Val::U64(0)),
         CtlType::String => {
             if let CtlValue::String(v) = ctl_value {
                 let size_result = v.parse::<usize>();
@@ -417,6 +440,30 @@ fn get_val_by_type(key: &str) -> Result<Val, LibJailError> {
         }
         _ => Err(LibJailError::MismatchCtlType),
     }
+}
+
+pub fn get_all_rules(index: impl Into<Index>) -> Result<HashMap<String, OutVal>, LibJailError> {
+
+    let root = "security.jail.param.";
+    let ctl_root = Ctl::new(root)?;
+    let mut names: Vec<String> = Vec::new();
+
+    for ctl in ctl_root {
+
+        let ctl = ctl?;
+        let ctl_name = ctl.name()?;
+        let ctl_type = ctl.value_type()?;
+        let name: &str = ctl_name.as_str()
+            .trim_left_matches(root);
+
+        if name.ends_with('.') { continue; }
+        names.push(name.to_string());
+
+    }
+
+    names.reverse();
+    get_rules(index, names)
+
 }
 
 pub fn get_rules<R>(index: impl Into<Index>, keys: R) -> Result<HashMap<String, OutVal>, LibJailError>
@@ -475,8 +522,8 @@ where
         for (key, value) in hash_map.iter_mut() {
 
             out_hash_map.insert(
-                key.clone().to_string()?,
-                OutVal::from(value.clone())
+                key.clone().into_string()?,
+                value.clone().into()
                 );
 
         }
