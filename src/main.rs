@@ -1,4 +1,5 @@
 extern crate libjail;
+extern crate sysctl;
 
 use std::process::Command;
 use std::collections::HashMap;
@@ -23,9 +24,9 @@ fn main() {
 
     // loop {}
 
-    // let rules = get_rules(1, vec!["name"]).unwrap();
+    // let rules = get_rules(1, vec!["ip4"]).unwrap();
     let rules = get_all_rules(1).unwrap();
-    let name = rules.get("name".into()).unwrap();
+    // let name = rules.get("name".into()).unwrap();
     println!("{:#?}", rules);
 
     // rules.insert("jid".into(), 1.into());

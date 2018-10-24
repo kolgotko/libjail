@@ -394,6 +394,14 @@ fn get_val_by_key(key: &str) -> Option<Val> {
 
         Some(Val::Ip6(0))
 
+    } else if key == "ip4" {
+
+        Some(Val::I32(0))
+
+    } else if key == "ip6" {
+
+        Some(Val::I32(0))
+
     } else { None }
 
 }
@@ -452,16 +460,14 @@ pub fn get_all_rules(index: impl Into<Index>) -> Result<HashMap<String, OutVal>,
 
         let ctl = ctl?;
         let ctl_name = ctl.name()?;
-        let ctl_type = ctl.value_type()?;
         let name: &str = ctl_name.as_str()
-            .trim_left_matches(root);
+            .trim_left_matches(root)
+            .trim_matches('.');
 
-        if name.ends_with('.') { continue; }
         names.push(name.to_string());
 
     }
 
-    names.reverse();
     get_rules(index, names)
 
 }
@@ -487,9 +493,21 @@ where
         }
 
         let value = get_val_by_type(&key);
-
         let key: Val = key.into();
-        hash_map.insert(key, value?);
+
+        match value {
+
+            Ok(value) => {
+                hash_map.insert(key, value);
+            },
+            Err(LibJailError::SysctlError(sysctl::SysctlError::NoReadAccess)) => {
+
+                continue;
+
+            },
+            _ => (),
+
+        }
 
     }
 
