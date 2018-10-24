@@ -10,22 +10,23 @@ fn main() {
 
     // let mut rules: HashMap<Val, Val> = HashMap::new();
 
-    // rules.insert("jid".into(), 2.into());
+    // rules.insert("jid".into(), 1.into());
     // rules.insert("path".into(), "/jails/freebsd112".into());
     // rules.insert("name".into(), "freebsd112".into());
+    // rules.insert("ip4".into(), JAIL_SYS_INHERIT.into());
     // rules.insert("host.hostname".into(), "${name}.jmaker.service".into());
-    // rules.insert("ip4.addr".into(), "127.0.0.1".parse::<Ipv4Addr>().unwrap().into());
-    // // rules.insert("persist".into(), true.into());
+    // rules.insert("ip4.addr".into(), "127.0.0.2".parse::<Ipv4Addr>().unwrap().into());
+    // rules.insert("persist".into(), true.into());
     // rules.insert("nopersist".into(), Val::Null);
 
-    // let jid = set(rules, Action::create() + Modifier::attach()).unwrap();
+    // let jid = set(rules, Action::create()).unwrap();
 
     // remove(jid).unwrap();
 
     // loop {}
 
-    // let rules = get_rules(1, vec!["ip4"]).unwrap();
-    let rules = get_all_rules(1).unwrap();
+    let rules = get_rules(1, vec!["test"]).unwrap();
+    // let rules = get_rules_all(1).unwrap();
     // let name = rules.get("name".into()).unwrap();
     println!("{:#?}", rules);
 

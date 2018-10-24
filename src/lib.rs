@@ -16,6 +16,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops;
 use std::fmt;
 
+pub use libc::JAIL_SYS_INHERIT;
+
 #[derive(Debug)]
 pub enum LibJailError {
     ExternalError { code: i32, message: String },
@@ -450,28 +452,6 @@ fn get_val_by_type(key: &str) -> Result<Val, LibJailError> {
     }
 }
 
-pub fn get_all_rules(index: impl Into<Index>) -> Result<HashMap<String, OutVal>, LibJailError> {
-
-    let root = "security.jail.param.";
-    let ctl_root = Ctl::new(root)?;
-    let mut names: Vec<String> = Vec::new();
-
-    for ctl in ctl_root {
-
-        let ctl = ctl?;
-        let ctl_name = ctl.name()?;
-        let name: &str = ctl_name.as_str()
-            .trim_left_matches(root)
-            .trim_matches('.');
-
-        names.push(name.to_string());
-
-    }
-
-    get_rules(index, names)
-
-}
-
 pub fn get_rules<R>(index: impl Into<Index>, keys: R) -> Result<HashMap<String, OutVal>, LibJailError>
 where
     R: IntoIterator,
@@ -505,7 +485,7 @@ where
                 continue;
 
             },
-            _ => (),
+            Err(err) => return Err(err),
 
         }
 
@@ -561,4 +541,26 @@ where
             })
         }
     }
+}
+
+pub fn get_rules_all(index: impl Into<Index>) -> Result<HashMap<String, OutVal>, LibJailError> {
+
+    let root = "security.jail.param.";
+    let ctl_root = Ctl::new(root)?;
+    let mut names: Vec<String> = Vec::new();
+
+    for ctl in ctl_root {
+
+        let ctl = ctl?;
+        let ctl_name = ctl.name()?;
+        let name: &str = ctl_name.as_str()
+            .trim_left_matches(root)
+            .trim_matches('.');
+
+        names.push(name.to_string());
+
+    }
+
+    get_rules(index, names)
+
 }
