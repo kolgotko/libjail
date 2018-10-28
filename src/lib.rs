@@ -313,6 +313,73 @@ impl Val {
     }
 }
 
+pub fn get_all_types_of_rules() -> Result<HashMap<String, CtlType>, Box<Error>> {
+
+    let node = "security.jail.param";
+    let ctls = Ctl::new(&node).unwrap();
+    let mut hash_map: HashMap<String, CtlType> = HashMap::new();
+
+    for ctl in ctls {
+
+        let ctl = ctl.unwrap();
+
+        let ctl_name = ctl.name().unwrap();
+        let ctl_name = ctl_name.trim_matches('.');
+        let ctl_value = ctl.value().unwrap();
+        let ctl_type = ctl.value_type().unwrap();
+        hash_map.insert(ctl_name.into(), ctl_type);
+
+    }
+
+    Ok(hash_map)
+
+}
+
+pub fn fake_set(rules: HashMap<String, String>, action: Action) -> Result<i32, LibJailError> {
+
+    let types = get_all_types_of_rules().unwrap();
+    let mut iovec_vec: Vec<libc::iovec> = Vec::new();
+
+    for (key, value) in rules.iter() {
+
+        let rule = format!("security.jail.param.{}", key);
+        let ctl_type = types.get(&rule).unwrap();
+
+        println!("key: {:?}, type: {:?}", key, ctl_type);
+
+        match ctl_type {
+            CtlType::Int => 
+            _ => (),
+        }
+        // iovec_vec.push(key.to_iov());
+        // iovec_vec.push(value.to_iov());
+    }
+
+    // let jid = unsafe {
+    //     jail_set(
+    //         iovec_vec.as_slice().as_ptr() as *mut _,
+    //         iovec_vec.len() as u32,
+    //         action.0,
+    //     )
+    // };
+
+    Ok(0)
+    // if jid > 0 {
+    //     Ok(jid)
+    // } else {
+    //     unsafe {
+    //         let code = *__error();
+    //         let message = CString::from_raw(strerror(code))
+    //             .into_string()
+    //             .map_err(|error| LibJailError::ConversionError(error.into()))?;
+
+    //         Err(LibJailError::ExternalError {
+    //             code: code,
+    //             message: message,
+    //         })
+    //     }
+    // }
+}
 pub fn set(rules: HashMap<Val, Val>, action: Action) -> Result<i32, LibJailError> {
     let mut iovec_vec = Vec::new();
 

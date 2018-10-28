@@ -9,7 +9,18 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 fn main() {
 
     // let mut rules: HashMap<Val, Val> = HashMap::new();
+    let mut rules: HashMap<String, String> = HashMap::new();
 
+    rules.insert("jid".into(), "1".into());
+    rules.insert("path".into(), "/jails/freebsd112".into());
+    rules.insert("name".into(), "freebsd112".into());
+    rules.insert("host.hostname".into(), "freebsd112.jmaker.service".into());
+    rules.insert("ip4.addr".into(), "127.0.0.2".into());
+    rules.insert("persist".into(), "true".into());
+
+    get_all_types_of_rules();
+    let jid = fake_set(rules, Action::create() + Modifier::attach());
+    //
     // rules.insert("jid".into(), 1.into());
     // rules.insert("path".into(), "/jails/freebsd112".into());
     // rules.insert("name".into(), "freebsd112".into());
@@ -25,10 +36,10 @@ fn main() {
 
     // loop {}
 
-    let rules = get_rules(1, vec!["test"]).unwrap();
+    // let rules = get_rules(1, vec!["test"]).unwrap();
     // let rules = get_rules_all(1).unwrap();
     // let name = rules.get("name".into()).unwrap();
-    println!("{:#?}", rules);
+    // println!("{:#?}", rules);
 
     // rules.insert("jid".into(), 1.into());
     // // rules.insert("name".into(), "freebsd112".into());
