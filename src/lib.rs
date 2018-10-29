@@ -313,11 +313,35 @@ impl Val {
     }
 }
 
-pub fn get_all_types_of_rules() -> Result<HashMap<String, CtlType>, Box<Error>> {
+#[derive(Debug)]
+pub enum RuleType {
+    Int,
+    Ulong,
+    Ip4,
+    Ip6,
+    String,
+    Unknown,
+}
+
+impl From<CtlType> for RuleType {
+    fn from(value: CtlType) -> RuleType {
+        match value {
+            CtlType::Int => RuleType::Int,
+            CtlType::String => RuleType::String,
+            CtlType::Ulong => RuleType::Ulong,
+            _ => RuleType::Unknown,
+        }
+    }
+}
+
+pub fn get_all_types_of_rules() -> Result<HashMap<String, RuleType>, Box<Error>> {
 
     let node = "security.jail.param";
     let ctls = Ctl::new(&node).unwrap();
-    let mut hash_map: HashMap<String, CtlType> = HashMap::new();
+    let mut hash_map: HashMap<String, RuleType> = HashMap::new();
+
+    let ip4_rule = format!("{}.{}", node, "ip4.addr");
+    let ip6_rule = format!("{}.{}", node, "ip6.addr");
 
     for ctl in ctls {
 
@@ -327,7 +351,20 @@ pub fn get_all_types_of_rules() -> Result<HashMap<String, CtlType>, Box<Error>> 
         let ctl_name = ctl_name.trim_matches('.');
         let ctl_value = ctl.value().unwrap();
         let ctl_type = ctl.value_type().unwrap();
-        hash_map.insert(ctl_name.into(), ctl_type);
+
+        if ctl_name == ip4_rule {
+
+            hash_map.insert(ctl_name.into(), RuleType::Ip4);
+
+        } else if ctl_name == ip6_rule {
+
+            hash_map.insert(ctl_name.into(), RuleType::Ip6);
+
+        } else {
+
+            hash_map.insert(ctl_name.into(), ctl_type.into());
+
+        }
 
     }
 
@@ -335,24 +372,49 @@ pub fn get_all_types_of_rules() -> Result<HashMap<String, CtlType>, Box<Error>> 
 
 }
 
-pub fn fake_set(rules: HashMap<String, String>, action: Action) -> Result<i32, LibJailError> {
+pub fn fake_set(rules: HashMap<String, String>, action: Action) -> Result<i32, Box<Error>> {
 
     let types = get_all_types_of_rules().unwrap();
+    let mut values_vec: Vec<Box<Val>> = Vec::new();
     let mut iovec_vec: Vec<libc::iovec> = Vec::new();
 
     for (key, value) in rules.iter() {
 
         let rule = format!("security.jail.param.{}", key);
-        let ctl_type = types.get(&rule).unwrap();
+        let rule_type = types.get(&rule).unwrap();
 
-        println!("key: {:?}, type: {:?}", key, ctl_type);
+        println!("key: {:?}, type: {:?}", key, rule_type);
 
-        match ctl_type {
-            CtlType::Int => 
-            _ => (),
-        }
-        // iovec_vec.push(key.to_iov());
-        // iovec_vec.push(value.to_iov());
+        let value: Result<Val, Box<Error>> = match rule_type {
+            RuleType::Int => {
+                Ok(Val::I32(value.parse::<i32>()?))
+            },
+            RuleType::String => {
+                Ok(Val::from(value.clone()))
+            },
+            RuleType::Ulong => { 
+                Ok(Val::U64(value.parse::<u64>()?))
+            },
+            RuleType::Ip4 => {
+                let ip = value.parse::<Ipv4Addr>()?; 
+                let ip = u32::from(ip).swap_bytes();
+                Ok(Val::Ip4(ip))
+            },
+            RuleType::Ip6 => {
+                let ip = value.parse::<Ipv6Addr>()?; 
+                let ip = u128::from(ip).swap_bytes();
+                Ok(Val::Ip6(ip))
+            },
+            RuleType::Unknown => Err(LibJailError::MismatchCtlType)?,
+        };
+
+        let boxed_key = Box::new(key.clone().into());
+        let boxed_value = Box::new(value?);
+        values_vec.push(Box::new(value?));
+        values_vec.push();
+
+        iovec_vec.push(key.to_iov());
+        iovec_vec.push(value.to_iov());
     }
 
     // let jid = unsafe {

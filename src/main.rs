@@ -16,10 +16,10 @@ fn main() {
     rules.insert("name".into(), "freebsd112".into());
     rules.insert("host.hostname".into(), "freebsd112.jmaker.service".into());
     rules.insert("ip4.addr".into(), "127.0.0.2".into());
-    rules.insert("persist".into(), "true".into());
+    rules.insert("persist".into(), "1".into());
 
-    get_all_types_of_rules();
-    let jid = fake_set(rules, Action::create() + Modifier::attach());
+    // get_all_types_of_rules();
+    let jid = fake_set(rules, Action::create() + Modifier::attach()).unwrap();
     //
     // rules.insert("jid".into(), 1.into());
     // rules.insert("path".into(), "/jails/freebsd112".into());
