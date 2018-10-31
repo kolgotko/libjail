@@ -20,6 +20,8 @@ use std::ops;
 use std::fmt;
 
 pub use libc::JAIL_SYS_INHERIT;
+pub use libc::JAIL_SYS_DISABLE;
+pub use libc::JAIL_SYS_NEW;
 
 pub const SYSCTL_PREFIX: &str = "security.jail.param";
 
