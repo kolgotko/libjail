@@ -18,6 +18,8 @@ use std::fmt;
 
 pub use libc::JAIL_SYS_INHERIT;
 
+pub const SYSCTL_PREFIX: &str = "security.jail.param";
+
 #[derive(Debug)]
 pub enum LibJailError {
     ExternalError { code: i32, message: String },
@@ -336,12 +338,11 @@ impl From<CtlType> for RuleType {
 
 pub fn get_all_types_of_rules() -> Result<HashMap<String, RuleType>, Box<Error>> {
 
-    let node = "security.jail.param";
-    let ctls = Ctl::new(&node).unwrap();
+    let ctls = Ctl::new(&SYSCTL_PREFIX).unwrap();
     let mut hash_map: HashMap<String, RuleType> = HashMap::new();
 
-    let ip4_rule = format!("{}.{}", node, "ip4.addr");
-    let ip6_rule = format!("{}.{}", node, "ip6.addr");
+    let ip4_rule = format!("{}.{}", SYSCTL_PREFIX, "ip4.addr");
+    let ip6_rule = format!("{}.{}", SYSCTL_PREFIX, "ip6.addr");
 
     for ctl in ctls {
 
@@ -469,7 +470,7 @@ fn get_val_by_key(key: &str) -> Option<Val> {
 
 fn get_val_by_type(key: &str) -> Result<Val, LibJailError> {
 
-    let rule = format!("security.jail.param.{}", key);
+    let rule = format!("{}.{}", SYSCTL_PREFIX, key);
 
     let ctl = Ctl::new(&rule)?;
     let _ctl_name = ctl.name()?;
@@ -604,8 +605,7 @@ where
 
 pub fn get_rules_all(index: impl Into<Index>) -> Result<HashMap<String, OutVal>, LibJailError> {
 
-    let root = "security.jail.param.";
-    let ctl_root = Ctl::new(root)?;
+    let ctl_root = Ctl::new(SYSCTL_PREFIX)?;
     let mut names: Vec<String> = Vec::new();
 
     for ctl in ctl_root {
@@ -613,7 +613,7 @@ pub fn get_rules_all(index: impl Into<Index>) -> Result<HashMap<String, OutVal>,
         let ctl = ctl?;
         let ctl_name = ctl.name()?;
         let name: &str = ctl_name.as_str()
-            .trim_left_matches(root)
+            .trim_left_matches(SYSCTL_PREFIX)
             .trim_matches('.');
 
         names.push(name.to_string());

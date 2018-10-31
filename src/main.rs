@@ -19,7 +19,6 @@ fn main() {
     rules.insert("persist".into(), "1".into());
 
     // get_all_types_of_rules();
-    let jid = fake_set(rules, Action::create() + Modifier::attach()).unwrap();
     //
     // rules.insert("jid".into(), 1.into());
     // rules.insert("path".into(), "/jails/freebsd112".into());
