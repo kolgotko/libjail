@@ -7,4 +7,5 @@ edition = "2018"
 [dependencies]
 libc = "*"
 sysctl = "*"
+lazy_static = "*"
 # serde_json = "*"

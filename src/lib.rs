@@ -1,6 +1,9 @@
 
 extern crate libc;
 extern crate sysctl;
+extern crate lazy_static;
+
+use lazy_static::lazy_static;
 
 use libc::iovec;
 use libc::{__error, strerror};
@@ -334,6 +337,45 @@ impl From<CtlType> for RuleType {
             _ => RuleType::Unknown,
         }
     }
+}
+
+lazy_static! {
+    pub static ref RULES_ALL: HashMap<String, RuleType>  = {
+
+        let ctls = Ctl::new(&SYSCTL_PREFIX).unwrap();
+        let mut hash_map: HashMap<String, RuleType> = HashMap::new();
+
+        let ip4_rule = format!("{}.{}", SYSCTL_PREFIX, "ip4.addr");
+        let ip6_rule = format!("{}.{}", SYSCTL_PREFIX, "ip6.addr");
+
+        for ctl in ctls {
+
+            let ctl = ctl.unwrap();
+
+            let ctl_name = ctl.name().unwrap();
+            let ctl_name = ctl_name.trim_matches('.');
+            let ctl_value = ctl.value().unwrap();
+            let ctl_type = ctl.value_type().unwrap();
+
+            if ctl_name == ip4_rule {
+
+                hash_map.insert(ctl_name.into(), RuleType::Ip4);
+
+            } else if ctl_name == ip6_rule {
+
+                hash_map.insert(ctl_name.into(), RuleType::Ip6);
+
+            } else {
+
+                hash_map.insert(ctl_name.into(), ctl_type.into());
+
+            }
+
+        }
+
+        hash_map
+
+    };
 }
 
 pub fn get_all_types_of_rules() -> Result<HashMap<String, RuleType>, Box<Error>> {
