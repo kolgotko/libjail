@@ -25,6 +25,48 @@ pub use libc::JAIL_SYS_NEW;
 
 pub const SYSCTL_PREFIX: &str = "security.jail.param";
 
+lazy_static! {
+    pub static ref RULES_ALL: HashMap<String, RuleType>  = {
+
+        let ctls = Ctl::new(&SYSCTL_PREFIX).unwrap();
+        let mut hash_map: HashMap<String, RuleType> = HashMap::new();
+
+        let ip4_rule = "ip4.addr";
+        let ip6_rule = "ip6.addr";
+
+        for ctl in ctls {
+
+            let ctl = ctl.unwrap();
+
+            let ctl_name = ctl.name().unwrap();
+            let rule_name = ctl_name
+                .trim_left_matches(SYSCTL_PREFIX)
+                .trim_matches('.');
+            let ctl_value = ctl.value().unwrap();
+            let ctl_type = ctl.value_type().unwrap();
+
+            if rule_name == ip4_rule {
+
+                hash_map.insert(rule_name.into(), RuleType::Ip4);
+
+            } else if rule_name == ip6_rule {
+
+                hash_map.insert(rule_name.into(), RuleType::Ip6);
+
+            } else {
+
+                hash_map.insert(rule_name.into(), ctl_type.into());
+
+            }
+
+        }
+
+        hash_map
+
+    };
+}
+
+
 #[derive(Debug)]
 pub enum LibJailError {
     ExternalError { code: i32, message: String },
@@ -341,45 +383,6 @@ impl From<CtlType> for RuleType {
     }
 }
 
-lazy_static! {
-    pub static ref RULES_ALL: HashMap<String, RuleType>  = {
-
-        let ctls = Ctl::new(&SYSCTL_PREFIX).unwrap();
-        let mut hash_map: HashMap<String, RuleType> = HashMap::new();
-
-        let ip4_rule = format!("{}.{}", SYSCTL_PREFIX, "ip4.addr");
-        let ip6_rule = format!("{}.{}", SYSCTL_PREFIX, "ip6.addr");
-
-        for ctl in ctls {
-
-            let ctl = ctl.unwrap();
-
-            let ctl_name = ctl.name().unwrap();
-            let ctl_name = ctl_name.trim_matches('.');
-            let ctl_value = ctl.value().unwrap();
-            let ctl_type = ctl.value_type().unwrap();
-
-            if ctl_name == ip4_rule {
-
-                hash_map.insert(ctl_name.into(), RuleType::Ip4);
-
-            } else if ctl_name == ip6_rule {
-
-                hash_map.insert(ctl_name.into(), RuleType::Ip6);
-
-            } else {
-
-                hash_map.insert(ctl_name.into(), ctl_type.into());
-
-            }
-
-        }
-
-        hash_map
-
-    };
-}
-
 pub fn set(rules: HashMap<Val, Val>, action: Action) -> Result<i32, LibJailError> {
     let mut iovec_vec = Vec::new();
 
@@ -612,20 +615,9 @@ where
 
 pub fn get_rules_all(index: impl Into<Index>) -> Result<HashMap<String, OutVal>, LibJailError> {
 
-    let ctl_root = Ctl::new(SYSCTL_PREFIX)?;
-    let mut names: Vec<String> = Vec::new();
-
-    for ctl in ctl_root {
-
-        let ctl = ctl?;
-        let ctl_name = ctl.name()?;
-        let name: &str = ctl_name.as_str()
-            .trim_left_matches(SYSCTL_PREFIX)
-            .trim_matches('.');
-
-        names.push(name.to_string());
-
-    }
+    let names: Vec<String> = RULES_ALL.keys()
+        .map(|key| key.clone())
+        .collect();
 
     get_rules(index, names)
 
