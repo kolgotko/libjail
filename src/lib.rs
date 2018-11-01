@@ -13,6 +13,7 @@ use sysctl::{Ctl, CtlType, CtlValue};
 use std::collections::HashMap;
 use std::convert::*;
 use std::error::Error;
+use std::io::Error as IoError;
 use std::ffi::{CString, CStr};
 use std::mem::{size_of_val};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -69,7 +70,7 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum LibJailError {
-    ExternalError { code: i32, message: String },
+    IoError(IoError),
     SysctlError(sysctl::SysctlError),
     ConversionError(Box<Error>),
     MismatchCtlType,
@@ -83,6 +84,12 @@ impl fmt::Display for LibJailError {
 }
 
 impl Error for LibJailError {}
+
+impl From<IoError> for LibJailError {
+    fn from(error: IoError) -> Self {
+        LibJailError::IoError(error)
+    }
+}
 
 impl From<sysctl::SysctlError> for LibJailError {
     fn from(error: sysctl::SysctlError) -> Self {
@@ -402,57 +409,30 @@ pub fn set(rules: HashMap<Val, Val>, action: Action) -> Result<i32, LibJailError
     if jid > 0 {
         Ok(jid)
     } else {
-        unsafe {
-            let code = *__error();
-            let message = CString::from_raw(strerror(code))
-                .into_string()
-                .map_err(|error| LibJailError::ConversionError(error.into()))?;
-
-            Err(LibJailError::ExternalError {
-                code: code,
-                message: message,
-            })
-        }
+        Err(IoError::last_os_error())?
     }
 }
 
 pub fn attach(jid: i32) -> Result<(), LibJailError> {
+
     let result = unsafe { jail_attach(jid) };
 
     if result == 0 {
         Ok(())
     } else {
-        unsafe {
-            let code = *__error();
-            let message = CString::from_raw(strerror(code))
-                .into_string()
-                .map_err(|error| LibJailError::ConversionError(error.into()))?;
-
-            Err(LibJailError::ExternalError {
-                code: code,
-                message: message,
-            })
-        }
+        Err(IoError::last_os_error())?
     }
+
 }
 
 pub fn remove(jid: i32) -> Result<(), LibJailError> {
+
     let result = unsafe { jail_remove(jid) };
 
     if result == 0 {
         Ok(())
     } else {
-        unsafe {
-            let code = *__error();
-            let message = CString::from_raw(strerror(code))
-                .into_string()
-                .map_err(|error| LibJailError::ConversionError(error.into()))?;
-
-            Err(LibJailError::ExternalError {
-                code: code,
-                message: message,
-            })
-        }
+        Err(IoError::last_os_error())?
     }
 }
 
@@ -599,17 +579,7 @@ where
         Ok(out_hash_map)
 
     } else {
-        unsafe {
-            let code = *__error();
-            let message = CString::from_raw(strerror(code))
-                .into_string()
-                .map_err(|error| LibJailError::ConversionError(error.into()))?;
-
-            Err(LibJailError::ExternalError {
-                code: code,
-                message: message,
-            })
-        }
+        Err(IoError::last_os_error())?
     }
 }
 

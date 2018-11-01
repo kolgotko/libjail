@@ -8,15 +8,16 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 fn main() {
 
-    // let mut rules: HashMap<Val, Val> = HashMap::new();
-    let mut rules: HashMap<String, String> = HashMap::new();
+    let mut rules: HashMap<Val, Val> = HashMap::new();
+    // let mut rules: HashMap<String, String> = HashMap::new();
 
     rules.insert("jid".into(), "1".into());
     rules.insert("path".into(), "/jails/freebsd112".into());
     rules.insert("name".into(), "freebsd112".into());
     rules.insert("host.hostname".into(), "freebsd112.jmaker.service".into());
     rules.insert("ip4.addr".into(), "127.0.0.2".into());
-    rules.insert("persist".into(), "1".into());
+    // rules.insert("persist".into(), "1".into());
+    let jid = set(rules, Action::create()).unwrap();
 
     // get_all_types_of_rules();
     //
