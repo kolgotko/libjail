@@ -1,3 +1,4 @@
+#![feature(try_from)]
 extern crate libjail;
 extern crate sysctl;
 
@@ -5,46 +6,21 @@ use std::process::Command;
 use std::collections::HashMap;
 use libjail::*;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::error::Error;
+use std::convert::TryInto;
 
-fn main() {
+fn main() -> Result<(), Box<Error>> {
 
     let mut rules: HashMap<Val, Val> = HashMap::new();
-    // let mut rules: HashMap<String, String> = HashMap::new();
 
-    rules.insert("jid".into(), "1".into());
-    rules.insert("path".into(), "/jails/freebsd112".into());
-    rules.insert("name".into(), "freebsd112".into());
-    rules.insert("host.hostname".into(), "freebsd112.jmaker.service".into());
-    rules.insert("ip4.addr".into(), "127.0.0.2".into());
-    // rules.insert("persist".into(), "1".into());
+    rules.insert("jid".try_into()?, "1".try_into()?);
+    rules.insert("path".try_into()?, "/jails/freebsd112".try_into()?);
+    rules.insert("name".try_into()?, "freebsd112".try_into()?);
+    rules.insert("host.hostname".try_into()?, "freebsd112.jmaker.service".try_into()?);
+    rules.insert("ip4.addr".try_into()?, "127.0.0.2".try_into()?);
+    rules.insert("persist".try_into()?, true.try_into()?);
+
     let jid = set(rules, Action::create()).unwrap();
 
-    // get_all_types_of_rules();
-    //
-    // rules.insert("jid".into(), 1.into());
-    // rules.insert("path".into(), "/jails/freebsd112".into());
-    // rules.insert("name".into(), "freebsd112".into());
-    // rules.insert("ip4".into(), JAIL_SYS_INHERIT.into());
-    // rules.insert("host.hostname".into(), "${name}.jmaker.service".into());
-    // rules.insert("ip4.addr".into(), "127.0.0.2".parse::<Ipv4Addr>().unwrap().into());
-    // rules.insert("persist".into(), true.into());
-    // rules.insert("nopersist".into(), Val::Null);
-
-    // let jid = set(rules, Action::create()).unwrap();
-
-    // remove(jid).unwrap();
-
-    // loop {}
-
-    // let rules = get_rules(1, vec!["test"]).unwrap();
-    // let rules = get_rules_all(1).unwrap();
-    // let name = rules.get("name".into()).unwrap();
-    // println!("{:#?}", rules);
-
-    // rules.insert("jid".into(), 1.into());
-    // // rules.insert("name".into(), "freebsd112".into());
-    // rules.insert("name".into(), vec![0; 256].into());
-    // // rules.insert("host.hostname".into(), "".into());
-
-    // println!("{:#?}", rules);
+    Ok(())
 }

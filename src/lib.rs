@@ -1,4 +1,4 @@
-
+#![feature(try_from)]
 extern crate libc;
 extern crate sysctl;
 extern crate lazy_static;
@@ -6,7 +6,6 @@ extern crate lazy_static;
 use lazy_static::lazy_static;
 
 use libc::iovec;
-use libc::{__error, strerror};
 use libc::{jail_attach, jail_get, jail_remove, jail_set};
 use sysctl::{Ctl, CtlType, CtlValue};
 
@@ -14,11 +13,12 @@ use std::collections::HashMap;
 use std::convert::*;
 use std::error::Error;
 use std::io::Error as IoError;
-use std::ffi::{CString, CStr};
+use std::ffi::*;
 use std::mem::{size_of_val};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops;
 use std::fmt;
+use std::num::*;
 
 pub use libc::JAIL_SYS_INHERIT;
 pub use libc::JAIL_SYS_DISABLE;
@@ -43,7 +43,7 @@ lazy_static! {
             let rule_name = ctl_name
                 .trim_left_matches(SYSCTL_PREFIX)
                 .trim_matches('.');
-            let ctl_value = ctl.value().unwrap();
+            let _ctl_value = ctl.value().unwrap();
             let ctl_type = ctl.value_type().unwrap();
 
             if rule_name == ip4_rule {
@@ -67,12 +67,48 @@ lazy_static! {
     };
 }
 
+#[derive(Debug)]
+pub enum ConvertError {
+    NulError(NulError),
+    IntoStringError(IntoStringError),
+    ParseIntError(ParseIntError),
+}
+
+impl fmt::Display for ConvertError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConvertError::NulError(error) => error.fmt(f),
+            ConvertError::IntoStringError(error) => error.fmt(f),
+            ConvertError::ParseIntError(error) => error.fmt(f),
+        }
+    }
+}
+
+impl Error for ConvertError {}
+
+impl From<NulError> for ConvertError {
+    fn from(value: NulError) -> Self {
+        ConvertError::NulError(value)
+    }
+}
+
+impl From<IntoStringError> for ConvertError {
+    fn from(value: IntoStringError) -> Self {
+        ConvertError::IntoStringError(value)
+    }
+}
+
+impl From<ParseIntError> for ConvertError {
+    fn from(value: ParseIntError) -> Self {
+        ConvertError::ParseIntError(value)
+    }
+}
 
 #[derive(Debug)]
 pub enum LibJailError {
     IoError(IoError),
     SysctlError(sysctl::SysctlError),
-    ConversionError(Box<Error>),
+    ConvertError(ConvertError),
     MismatchCtlType,
     MismatchCtlValue,
 }
@@ -94,6 +130,12 @@ impl From<IoError> for LibJailError {
 impl From<sysctl::SysctlError> for LibJailError {
     fn from(error: sysctl::SysctlError) -> Self {
         LibJailError::SysctlError(error)
+    }
+}
+
+impl From<ConvertError> for LibJailError {
+    fn from(value: ConvertError) -> Self {
+        LibJailError::ConvertError(value)
     }
 }
 
@@ -226,65 +268,86 @@ pub enum Val {
     Null,
 }
 
-impl From<String> for Val {
-    fn from(value: String) -> Self {
-        Val::CString(CString::new(value).unwrap())
+impl TryFrom<String> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(Val::CString(CString::new(value)?))
+    }
+
+}
+
+impl TryFrom<&str> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Val::CString(CString::new(value)?))
     }
 }
 
-impl From<CString> for Val {
-    fn from(value: CString) -> Self {
-        Val::CString(value)
+impl TryFrom<CString> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: CString) -> Result<Self, Self::Error> {
+        Ok(Val::CString(value))
     }
 }
 
-impl From<i32> for Val {
-    fn from(value: i32) -> Self {
-        Val::I32(value)
+impl TryFrom<i32> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Ok(Val::I32(value))
     }
 }
 
-impl From<u32> for Val {
-    fn from(value: u32) -> Self {
-        Val::U32(value)
+impl TryFrom<u32> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        Ok(Val::U32(value))
     }
 }
 
-impl From<u64> for Val {
-    fn from(value: u64) -> Self {
-        Val::U64(value)
+impl TryFrom<u64> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        Ok(Val::U64(value))
     }
 }
 
-impl From<Vec<u8>> for Val {
-    fn from(value: Vec<u8>) -> Self {
-        Val::Buffer(value)
+impl TryFrom<Vec<u8>> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(Val::Buffer(value))
     }
 }
 
-impl From<bool> for Val {
-    fn from(value: bool) -> Self {
-        Val::Bool(value)
+impl TryFrom<bool> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: bool) -> Result<Self, Self::Error> {
+        Ok(Val::Bool(value))
     }
 }
 
-impl From<Ipv4Addr> for Val {
-    fn from(value: Ipv4Addr) -> Self {
+impl TryFrom<Ipv4Addr> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: Ipv4Addr) -> Result<Self, Self::Error> {
         let numeric: u32 = value.into();
-        Val::Ip4(numeric.swap_bytes())
+        Ok(Val::Ip4(numeric.swap_bytes()))
     }
 }
 
-impl From<Ipv6Addr> for Val {
-    fn from(value: Ipv6Addr) -> Self {
+impl TryFrom<Ipv6Addr> for Val {
+    type Error = ConvertError;
+
+    fn try_from(value: Ipv6Addr) -> Result<Self, Self::Error> {
         let numeric: u128 = value.into();
-        Val::Ip6(numeric.swap_bytes())
-    }
-}
-
-impl From<&str> for Val {
-    fn from(value: &str) -> Self {
-        Val::CString(CString::new(value).unwrap())
+        Ok(Val::Ip6(numeric.swap_bytes()))
     }
 }
 
@@ -299,11 +362,11 @@ impl Val {
                 };
 
                 string.into_string()
-                    .map_err(|error| LibJailError::ConversionError(error.into()))
+                    .map_err(|error| LibJailError::ConvertError(error.into()))
             },
             Val::CString(value) => {
                 value.into_string()
-                    .map_err(|error| LibJailError::ConversionError(error.into()))
+                    .map_err(|error| LibJailError::ConvertError(error.into()))
             },
             Val::I32(value) => Ok(value.to_string()),
             Val::U32(value) => Ok(value.to_string()),
@@ -474,11 +537,11 @@ fn get_val_by_type(key: &str) -> Result<Val, LibJailError> {
             if let CtlValue::String(v) = ctl_value {
                 let size_result = v.parse::<usize>();
                 let size_result = size_result
-                    .map_err(|error| LibJailError::ConversionError(error.into()));
+                    .map_err(|error| LibJailError::ConvertError(error.into()));
 
                 let size: usize = size_result?;
                 let buffer: Vec<u8> = vec![0; size];
-                Ok(Val::from(buffer))
+                Ok(Val::try_from(buffer)?)
             } else {
                 Err(LibJailError::MismatchCtlValue)
             }
@@ -517,13 +580,13 @@ where
 
         if value.is_some() {
 
-            hash_map.insert(key.clone().into(), value.unwrap());
+            hash_map.insert(key.clone().try_into()?, value.unwrap());
             continue;
 
         }
 
         let value = get_val_by_type(&key);
-        let key: Val = key.into();
+        let key: Val = key.try_into()?;
 
         match value {
 
@@ -543,10 +606,10 @@ where
 
     match index.into() {
         Index::Jid(jid) => {
-            hash_map.insert("jid".into(), jid.into());
+            hash_map.insert("jid".try_into()?, jid.try_into()?);
         },
         Index::Name(name) => {
-            hash_map.insert("name".into(), name.into());
+            hash_map.insert("name".try_into()?, name.try_into()?);
         },
     }
 
