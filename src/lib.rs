@@ -1,4 +1,3 @@
-#![feature(try_from)]
 extern crate libc;
 extern crate sysctl;
 extern crate lazy_static;
